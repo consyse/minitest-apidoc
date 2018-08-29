@@ -27,14 +27,117 @@ module Minitest
   end
 end
 
+# module Kernel
+#   # `document` is an alias for `describe` but it also declares the tests
+#   # order-dependent. This is because we would like to have the documentation
+#   # always in the same order.
+#   def document(desc, additional_desc=nil, &block)
+#     describe desc, additional_desc do
+#       i_suck_and_my_tests_are_order_dependent!
+#       self.instance_eval(&block)
+#     end
+#   end
+# end
+
 module Kernel
   # `document` is an alias for `describe` but it also declares the tests
   # order-dependent. This is because we would like to have the documentation
   # always in the same order.
   def document(desc, additional_desc=nil, &block)
-    describe desc, additional_desc do
-      i_suck_and_my_tests_are_order_dependent!
-      self.instance_eval(&block)
+
+    # puts "documenting..."
+
+    if desc.include?("::")
+      module_split_name = desc.split("::")
+
+      first_module = nil
+
+      module_split_name.each do |name|
+
+        if module_split_name.last != name
+
+          if first_module
+            begin
+              klass = first_module.const_get(name)
+            rescue NameError
+              klass = first_module.const_set(name, Module.new)
+            end
+          else
+            begin
+              klass = Module.const_get(name)
+            rescue NameError
+              klass = Object.const_set(name, Module.new)
+            end
+          end
+
+          first_module = klass
+        else
+
+          spec_name = name + "Spec"
+
+          begin
+            last_klass = first_module.const_get(spec_name)
+          rescue NameError
+            last_klass = first_module.const_set(spec_name,  Class.new(ApiSpec) {
+              include Minitest::Apidoc::CaptureMethods
+              i_suck_and_my_tests_are_order_dependent!
+              self.instance_eval(&block)
+            })
+          end
+          first_module = last_klass
+
+        end
+
+      end
+
+    else
+      Object.const_set(desc,  Class.new(ApiSpec) {
+        include Minitest::Apidoc::CaptureMethods
+        i_suck_and_my_tests_are_order_dependent!
+        self.instance_eval(&block)
+      })
+    end
+  end
+end
+
+# require "rack/test"
+
+module Minitest
+  module Apidoc
+    module CaptureMethods
+      include Rack::Test::Methods
+
+      VERBS = %w[head get post put patch delete options]
+
+      # Takes over rack-test's `get`, `post`, etc. methods (first aliasing the
+      # originals so that they can still be used). This way we can call the
+      # methods normally in our tests but they perform all the documentation
+      # goodness.
+      VERBS.each do |verb|
+        alias_method "rack_test_#{verb}", verb
+        # new_method_name = "capture_#{verb}"
+        new_method_name = verb
+        define_method(new_method_name) do |uri, params={}, env={}, &block|
+          _request(verb, uri, params, env, &block)
+        end
+      end
+
+      # Performs a rack-test request while also saving the metadata necessary
+      # for documentation. Detects if the response is JSON (naively by just
+      # trying to parse it as JSON). If it is, formats the response nicely and
+      # also yields the data as parsed JSON object instead of raw text.
+      def _request(verb, uri, params={}, env={})
+        send("rack_test_#{verb}", uri, params, env)
+        self.class.metadata[:session] = current_session
+
+        response_data = begin
+          JSON.load(last_response.body)
+        rescue JSON::ParserError
+          last_response.body
+        end
+
+        yield response_data if block_given?
+      end
     end
   end
 end
