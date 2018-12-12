@@ -38,7 +38,7 @@ module Minitest
       # Sort order for endpoints: first sort by request method (HEAD, GET, ...)
       # and then by length of request path (shortest first).
       def sort_index
-        1000 * Methods::VERBS.index(request_method.downcase) + request_path.length
+        1000 * Methods::VERBS.index(request_method.downcase.to_s) + request_path.length
       end
 
       def method_missing(name, *args, &block)
