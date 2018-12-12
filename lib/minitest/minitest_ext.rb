@@ -38,7 +38,6 @@ end
 #     end
 #   end
 # end
-
 module Kernel
   # `document` is an alias for `describe` but it also declares the tests
   # order-dependent. This is because we would like to have the documentation
@@ -81,13 +80,13 @@ module Kernel
             last_klass = first_module.const_set(spec_name,  Class.new(ApiSpec) {
               include Minitest::Apidoc::CaptureMethods
               i_suck_and_my_tests_are_order_dependent!
-              self.instance_eval(&block)
+
+              # This allows for methods defined in the spec to be included
+              self.class_eval(&block)
             })
           end
           first_module = last_klass
-
         end
-
       end
 
     else
@@ -96,6 +95,38 @@ module Kernel
         i_suck_and_my_tests_are_order_dependent!
         self.instance_eval(&block)
       })
+    end
+  end
+end
+
+
+module Minitest
+  module Apidoc
+    class Endpoint
+      attr_accessor :metadata, :params, :examples
+
+      def initialize(test_class)
+        @params = test_class.params
+        @metadata = test_class.metadata
+        @examples = []
+      end
+
+      # If request method is specified explicitly in the metadata by the user,
+      # prefer that. If not, grab the request method that was actually used by
+      # rack-test (stored in the example).
+      def request_method
+
+        found_verb = @metadata[:request_method].to_s || @examples[0].request_method
+        found_verb = found_verb.downcase
+
+        allowed_verbs = %w[head get post put patch delete options]
+        if !allowed_verbs.include?(found_verb)
+          raise "Verb '#{found_verb}' is not in the list of allowed verbs: [#{allowed_verbs.join(', ')}]"
+        end
+
+        found_verb.upcase
+      end
+
     end
   end
 end
