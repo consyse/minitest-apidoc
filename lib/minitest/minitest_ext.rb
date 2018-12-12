@@ -1,5 +1,5 @@
 module Minitest
-  class Test #< Runnable
+  class Test < Runnable
     class << self
       def metadata
         @metadata ||= {}
